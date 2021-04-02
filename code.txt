@@ -1,0 +1,79 @@
+public Map queryServerItems(Map map) {
+        map.put("is_valid", SibpmConstant.SIBPM_YES_1_S);
+        Map<String, Object> result = (Map) PersistenceUtil.queryForObject("SibpmDubboQuery.getHandleStatics", map); //前台受理工作站统计数据
+        // 查询服务事项
+        List<Map> serviceItemList = PersistenceUtil.queryForList("SibpmDubboQuery.getServiceItemList", map);
+        // 查询当前经办人员的有经办权限的业务
+        List<Map> approvalAaa121List = PersistenceUtil.queryForList("SibpmDubboQuery.getAaa121ByUserid", map);
+        List<Map> allApprovalServiceItemList = new ArrayList<Map>(); //去重前的有权限的服务事项
+        List<Map> approvalServiceItemList = new ArrayList<Map>();    //去重后的有权限的服务事项
+        /**
+         * 处理事项对照表中当前经办人员有经办权限的业务
+         */
+        for (Map serviceItemMap : serviceItemList) {
+            for (Map approvelAaa121Map : approvalAaa121List) {
+                if(approvelAaa121Map.get("aaa121").equals(serviceItemMap.get("aaa121"))) {
+                    allApprovalServiceItemList.add(serviceItemMap);
+                    approvalServiceItemList.add(serviceItemMap);
+                    break;
+                }
+            }
+        }
+        /**
+         * 筛选去掉重复的服务事项
+         */
+        Map<String, Map> tempMap = new HashMap<String, Map>();
+        for (Map approvalServiceItemMap : approvalServiceItemList) {
+            String service_code = approvalServiceItemMap.get("service_code").toString();
+            tempMap.put(service_code, approvalServiceItemMap);
+        }
+        approvalServiceItemList.clear();
+        Set<String> temMapKey = tempMap.keySet();
+        for(String key: temMapKey){
+            approvalServiceItemList.add(tempMap.get(key));
+        }
+        /**
+         * 对服务事项的对应功能菜单进行处理
+         */
+        List<Map> newApprovalServiceItemList = new ArrayList<Map>();
+        for(Map approvalServiceItemMap : approvalServiceItemList) {
+            List<Map> list = new ArrayList<Map>();
+            Map serviceItemMap = new HashMap();
+            for(Map allApprovalServiceItemMap : allApprovalServiceItemList) {
+                if(approvalServiceItemMap.get("service_code").equals(allApprovalServiceItemMap.get("service_code"))) {
+                    list.add(allApprovalServiceItemMap);
+                }
+            }
+            /**
+             * 解决$ref循环引用问题
+             */
+            serviceItemMap.put("service_code", approvalServiceItemMap.get("service_code"));
+            serviceItemMap.put("service_name", approvalServiceItemMap.get("service_name"));
+            serviceItemMap.put("service_type1", approvalServiceItemMap.get("service_type1"));
+            serviceItemMap.put("service_no", approvalServiceItemMap.get("service_no"));
+            serviceItemMap.put("list", list);
+            newApprovalServiceItemList.add(serviceItemMap);
+        }
+        List<AppCodeVo> serviceTypeList = CodeTableUtil.getCodeList("SIBPM_SERVICE_TYPE", null);//获取分类列表
+        List<Map> allList = new ArrayList<Map>(); //拼装要返回给前台的list
+        for(AppCodeVo appCodeVo : serviceTypeList) {
+            Map serviceItemMap = new HashMap();
+            serviceItemMap.put("id", appCodeVo.getCodeValue());
+            serviceItemMap.put("businessname", appCodeVo.getCodeDESC());
+            List<Map> list = new ArrayList<Map>();
+            for(Map approvalServiceItemMap : newApprovalServiceItemList) {
+                if (appCodeVo.getCodeValue().equals(approvalServiceItemMap.get("service_type1"))) {
+                    list.add(approvalServiceItemMap);
+                }
+            }
+            Collections.sort(list, new Comparator<Map>() {
+                public int compare(Map m1, Map m2) {
+                    return new Integer(m1.get("service_no").toString()).compareTo(new Integer(m2.get("service_no").toString()));
+                }
+            });
+            serviceItemMap.put("list", list);
+            allList.add(serviceItemMap);
+        }
+        result.put("allList", allList);
+        return result;
+    }
